@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Lanzamiento Vertical</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background-color: #020617;
+        }
+
+        #simulation-container { cursor: grab; }
+        #simulation-container:active { cursor: grabbing; }
+
+        .control-panel {
+            background-color: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(8px);
+        }
+        .control-panel select {
+            background-color: #1e293b;
+            border-color: #334155;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        .control-panel select:hover { border-color: #475569; }
+        .control-panel .separator { height: 1px; background-color: #334155; }
+        
+        input[type=range] { -webkit-appearance: none; background: transparent; width: 100%;}
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-thumb { 
+            -webkit-appearance: none; height: 20px; width: 20px; border-radius: 50%; 
+            background: #818cf8; cursor: pointer; margin-top: -7px; 
+            border: 3px solid #0f172a;
+            box-shadow: 0 0 5px rgba(129, 140, 248, 0.7);
+            transition: transform 0.1s;
+        }
+        input[type=range]:active::-webkit-slider-thumb { transform: scale(1.2); }
+        input[type=range]::-webkit-slider-runnable-track { 
+            width: 100%; height: 6px; cursor: pointer; 
+            background: #334155; border-radius: 3px; 
+        }
+        input[type=range]:disabled::-webkit-slider-thumb {
+            background: #475569; box-shadow: none; cursor: not-allowed;
+        }
+        input[type=range]:disabled::-webkit-slider-runnable-track { cursor: not-allowed; }
+        select:disabled { cursor: not-allowed; opacity: 0.5; }
+
+        input[type=checkbox] { accent-color: #818cf8; height: 1.125rem; width: 1.125rem; }
+        
+        .data-table-container::-webkit-scrollbar { width: 6px; }
+        .data-table-container::-webkit-scrollbar-track { background: #1e293b; border-radius: 3px; }
+        .data-table-container::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 3px; }
+
+        /* Estilos para el Pop-up */
+        .info-popup p { margin-bottom: 0.75rem; }
+        .formula {
+            background-color: #1e293b;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            font-size: 1.1rem;
+            letter-spacing: 0.05em;
+        }
+
+        /* Animación para la plataforma objetivo */
+        @keyframes pulse-glow {
+            0%, 100% {
+                box-shadow: 0 0 8px #16a34a, 0 0 12px #16a34a;
+            }
+            50% {
+                box-shadow: 0 0 16px #4ade80, 0 0 24px #4ade80;
+            }
+        }
+        .target-platform-glow {
+            animation: pulse-glow 3s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="text-gray-300 flex flex-col md:flex-row md:h-screen">
+
+    <!-- Columna de Simulación (60%) -->
+    <div class="w-full md:w-3/5 flex flex-col">
+        <div id="simulation-container" class="relative h-[60vh] md:h-auto md:flex-1 bg-[#020617]">
+            <div id="info-panel" class="absolute top-4 right-4 bg-slate-900/70 backdrop-blur-sm p-2 rounded-lg text-xs z-10 border border-slate-700 shadow-lg">
+                <p>Tiempo: <span id="time-value" class="font-mono text-amber-300">0.00</span> s</p>
+            </div>
+        </div>
+        <footer class="p-2 text-center text-xs text-gray-500 z-20 bg-slate-900">
+            Simulación creada por <a href="https://aulaquest.com" target="_blank" rel="noopener noreferrer" class="underline hover:text-indigo-400">Aulaquest</a>
+        </footer>
+    </div>
+
+    <!-- Panel de Controles (40%) -->
+    <div class="w-full md:w-2/5 control-panel p-5 z-10 border-t md:border-t-0 md:border-l border-slate-800 md:max-h-screen md:overflow-y-auto">
+        <div class="max-w-md mx-auto space-y-6">
+            
+            <div class="grid grid-cols-2 gap-4">
+                <button id="run" class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-lg hover:bg-indigo-500 transition-all transform hover:scale-105">Lanzar</button>
+                <button id="reset" class="w-full flex items-center justify-center gap-2 bg-slate-600 text-white font-semibold py-2 px-4 rounded-lg shadow-lg hover:bg-slate-500 transition-all">Reiniciar</button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label for="initialVelocitySlider" class="block font-medium text-gray-400 mb-2">Velocidad Inicial (v₀): <output id="initialVelocityValue" class="font-bold text-indigo-300">50.0</output> m/s</label>
+                    <input type="range" id="initialVelocitySlider" value="50" min="1" max="200" step="0.1">
+                </div>
+                 <div>
+                    <label for="rulerHeightSlider" class="block font-medium text-gray-400 mb-2">Escala de Altura: <output id="heightValue" class="font-bold text-indigo-300">200</output> m</label>
+                    <input type="range" id="rulerHeightSlider" value="200" min="10" max="5000" step="1">
+                </div>
+                <div>
+                    <label for="initialHeightSlider" class="block font-medium text-gray-400 mb-2">Altura Inicial: <output id="initialHeightValue" class="font-bold text-indigo-300">0</output> m</label>
+                    <input type="range" id="initialHeightSlider" value="0" min="0" max="200" step="1">
+                </div>
+                <div>
+                    <label for="targetHeightSlider" class="block font-medium text-gray-400 mb-2">Altura Objetivo: <output id="targetHeightValue" class="font-bold text-indigo-300">0</output> m</label>
+                    <input type="range" id="targetHeightSlider" value="0" min="0" max="200" step="1">
+                </div>
+                <div>
+                    <label for="planetSelector" class="block font-medium text-gray-400 mb-1">Lugar</label>
+                    <select id="planetSelector" class="w-full text-white text-sm rounded-md p-2.5 focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="9.81">Tierra 🌍</option><option value="1.62">Luna 🌕</option><option value="3.71">Marte 🪐</option><option value="24.79">Júpiter ♃</option><option value="8.87">Venus ♀️</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="airResistanceSelector" class="block font-medium text-gray-400 mb-1">Rozamiento con Aire</label>
+                    <select id="airResistanceSelector" class="w-full text-white text-sm rounded-md p-2.5 focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="0">Cero</option>
+                        <option value="0.2">Medio</option>
+                        <option value="0.8">Alto</option>
+                    </select>
+                    <div id="terminalVelocityDisplay" class="text-center text-cyan-400 mt-2 hidden">
+                        <p class="text-xs">Velocidad Límite (vₜ): <span id="terminalVelocityValue" class="font-bold">0.00</span> m/s</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="separator"></div>
+
+            <div class="grid grid-cols-2 gap-x-6 gap-y-4 text-xs">
+                  <label class="flex items-center gap-3 cursor-pointer"><input id="showHeightCheckbox" type="checkbox" checked class="bg-gray-600 border-gray-500 rounded">Mostrar Altura</label>
+                  <label class="flex items-center gap-3 cursor-pointer"><input id="showTimeCheckbox" type="checkbox" checked class="bg-gray-600 border-gray-500 rounded">Mostrar Tiempo</label>
+                  <label class="flex items-center gap-3 cursor-pointer"><input id="invertRulerCheckbox" type="checkbox" checked class="bg-gray-600 border-gray-500 rounded">Regla desde el suelo</label>
+                  <label class="flex items-center gap-3 cursor-pointer"><input id="showGraphsCheckbox" type="checkbox" class="bg-gray-600 border-gray-500 rounded">Gráficas y Datos</label>
+                  <label class="flex items-center gap-3 cursor-pointer"><input id="showVectorsCheckbox" type="checkbox" class="bg-gray-600 border-gray-500 rounded">Ver Vectores</label>
+            </div>
+            
+            <div id="analysisContainer" class="!mt-6 hidden space-y-6">
+                <div class="graphs-container">
+                    <div class="separator !mb-4"></div>
+                    <h3 class="font-bold text-lg text-gray-200 mb-3 text-center">Gráficas del Movimiento</h3>
+                    <div class="space-y-4">
+                        <div class="bg-slate-900/50 p-2 rounded-lg"><canvas id="xtChart"></canvas></div>
+                        <div class="bg-slate-900/50 p-2 rounded-lg"><canvas id="vtChart"></canvas></div>
+                    </div>
+                </div>
+                <div class="data-table-wrapper">
+                    <div class="separator !mb-4"></div>
+                    <h3 class="font-bold text-lg text-gray-200 mb-3 text-center">Tabla de Datos</h3>
+                    <div class="data-table-container max-h-60 overflow-y-auto rounded-lg border border-slate-700">
+                        <table class="w-full text-left text-gray-400">
+                            <thead class="text-gray-300 bg-slate-800/80 backdrop-blur-sm sticky top-0">
+                                <tr>
+                                    <th scope="col" class="py-2 px-3 text-xs">Tiempo (s)</th>
+                                    <th scope="col" class="py-2 px-3 text-xs">Altura (m)</th>
+                                    <th scope="col" class="py-2 px-3 text-xs">Velocidad (m/s)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dataTableBody" class="text-xs">
+                            </tbody>
+                        </table>
+                    </div>
+                    <button id="exportCsvBtn" class="w-full mt-4 flex items-center justify-center gap-2 bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg shadow-lg hover:bg-emerald-500 transition-all">Descargar CSV</button>
+                </div>
+            </div>
+            <button id="infoBtn" class="w-full mt-4 flex items-center justify-center gap-2 bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg shadow-lg hover:bg-sky-500 transition-all">Ver Información de la Simulación</button>
+        </div>
+    </div>
+
+    <!-- Pop-up de Información -->
+    <div id="infoPopup" class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+        <div class="info-popup bg-slate-800 text-gray-300 max-w-2xl w-full rounded-xl shadow-2xl border border-slate-700 p-8 max-h-[90vh] overflow-y-auto">
+            <h2 class="text-2xl font-bold text-white mb-6">Guía de la Simulación de Lanzamiento Vertical</h2>
+
+            <h3 class="text-lg font-semibold text-sky-400 mb-2">Cómo Usar el Simulador</h3>
+            <ul class="list-disc list-inside space-y-2 text-sm mb-6">
+                <li><b>Controles Principales:</b> Ajusta la velocidad inicial de lanzamiento, la escala de la regla, el planeta y el rozamiento antes de iniciar la simulación.</li>
+                <li><b>Análisis de Datos:</b> Activa "Gráficas y Datos" para visualizar las gráficas de posición y velocidad, así como una tabla con los datos numéricos que puedes descargar en formato CSV.</li>
+                <li><b>Visualización de Vectores:</b> La opción "Ver Vectores" te permite observar en tiempo real cómo cambian los vectores de velocidad (amarillo) y rozamiento (rojo).</li>
+                 <li><b>Interactividad:</b> Puedes arrastrar los medidores de color violeta directamente sobre el lienzo para cambiar su posición antes de iniciar la simulación.</li>
+            </ul>
+
+            <div class="separator my-8"></div>
+            
+            <h3 class="text-lg font-semibold text-purple-400 mb-2">La Física del Lanzamiento Vertical</h3>
+            
+            <h4 class="font-semibold text-white mt-4">Gravedad (g)</h4>
+            <p>La gravedad es la fuerza que atrae los objetos hacia el centro del planeta, provocando una aceleración constante (g). Se considera una aceleración negativa, ya que apunta hacia abajo.</p>
+            <ul class="text-sm list-disc list-inside my-2 bg-slate-900 p-4 rounded-lg">
+                <li><b>Tierra:</b> 9.81 m/s²</li><li><b>Luna:</b> 1.62 m/s²</li><li><b>Marte:</b> 3.71 m/s²</li><li><b>Júpiter:</b> 24.79 m/s²</li><li><b>Venus:</b> 8.87 m/s²</li>
+            </ul>
+
+            <h4 class="font-semibold text-white mt-4">Lanzamiento Ideal (Sin Rozamiento)</h4>
+            <p>Sin la resistencia del aire, la aceleración es constante (g). La altura y(t) y la velocidad v(t) se calculan con (considerando g=9.81 m/s²):</p>
+            <div class="formula">
+                <p>v(t) = v₀ - g · t</p>
+                <p>y(t) = y₀ + v₀t - ½gt²</p>
+            </div>
+            
+            <h4 class="font-semibold text-white mt-4">Lanzamiento con Rozamiento del Aire</h4>
+            <p>El aire ejerce una fuerza de rozamiento (Fᵣ) que siempre se opone al movimiento y aumenta con la velocidad. Usamos un modelo lineal donde Fᵣ = -b · v, siendo 'b' el coeficiente de rozamiento.</p>
+            <p class="text-xs text-gray-500">(Nota curiosa: ¡Sabemos que en la Luna o en Marte apenas hay atmósfera! Aplicar rozamiento aquí es un ejercicio puramente teórico para ver cómo se comportarían las ecuaciones.)</p>
+            
+            <h4 class="font-semibold text-white mt-4">Velocidad Límite o Terminal</h4>
+            <p>En la fase de caída, la velocidad límite (vₜ) se alcanza cuando la fuerza de rozamiento iguala a la fuerza de la gravedad. En ese punto, la fuerza neta es cero y la velocidad se vuelve constante.</p>
+            <div class="formula">
+                <p>Fuerza Gravedad = Fuerza Rozamiento</p>
+                <p>mg = b·vₜ  ⟹  vₜ = mg/b</p>
+            </div>
+             <p class="text-xs text-gray-500">(Para esta simulación, asumimos que la masa m = 1 kg).</p>
+
+            <button id="closePopupBtn" class="w-full mt-8 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow-lg hover:bg-indigo-500 transition-all">Cerrar</button>
+        </div>
+    </div>
+
+
+<script>
+    const canvasContainer = document.getElementById('simulation-container');
+    const canvas = document.createElement('canvas');
+    canvasContainer.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    
+    const timeValueElement = document.getElementById('time-value');
+    const infoPanel = document.getElementById('info-panel');
+    
+    // Variable para controlar el reinicio en scroll de móvil
+    let lastCanvasWidth = 0;
+
+    function resizeCanvas() {
+        const currentWidth = canvasContainer.offsetWidth;
+
+        if (isRunning && Math.abs(currentWidth - lastCanvasWidth) < 5) {
+            console.log("Scroll de móvil detectado durante la simulación. Reinicio ignorado.");
+            return;
+        }
+
+        canvas.width = canvasContainer.offsetWidth * window.devicePixelRatio;
+        canvas.height = canvasContainer.offsetHeight * window.devicePixelRatio;
+        canvas.style.width = `${canvasContainer.offsetWidth}px`;
+        canvas.style.height = `${canvasContainer.offsetHeight}px`;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        
+        if (canvasContainer.offsetWidth > 0) {
+            fullReset();
+        }
+        lastCanvasWidth = currentWidth;
+    }
+
+    const runBtn = document.getElementById('run');
+    const resetBtn = document.getElementById('reset');
+    const planetSelector = document.getElementById('planetSelector');
+    const airResistanceSelector = document.getElementById('airResistanceSelector');
+    const rulerHeightSlider = document.getElementById('rulerHeightSlider');
+    const heightValueOutput = document.getElementById('heightValue');
+    const initialVelocitySlider = document.getElementById('initialVelocitySlider');
+    const initialVelocityValue = document.getElementById('initialVelocityValue');
+    const initialHeightSlider = document.getElementById('initialHeightSlider');
+    const initialHeightValue = document.getElementById('initialHeightValue');
+    const targetHeightSlider = document.getElementById('targetHeightSlider');
+    const targetHeightValue = document.getElementById('targetHeightValue');
+    const showHeightCheckbox = document.getElementById('showHeightCheckbox');
+    const showTimeCheckbox = document.getElementById('showTimeCheckbox');
+    const invertRulerCheckbox = document.getElementById('invertRulerCheckbox');
+    const showGraphsCheckbox = document.getElementById('showGraphsCheckbox');
+    const showVectorsCheckbox = document.getElementById('showVectorsCheckbox');
+    const analysisContainer = document.getElementById('analysisContainer');
+    const xtChartCtx = document.getElementById('xtChart').getContext('2d');
+    const vtChartCtx = document.getElementById('vtChart').getContext('2d');
+    const dataTableBody = document.getElementById('dataTableBody');
+    const dataTableContainer = document.querySelector('.data-table-container');
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    const terminalVelocityDisplay = document.getElementById('terminalVelocityDisplay');
+    const terminalVelocityValue = document.getElementById('terminalVelocityValue');
+    const infoBtn = document.getElementById('infoBtn');
+    const infoPopup = document.getElementById('infoPopup');
+    const closePopupBtn = document.getElementById('closePopupBtn');
+
+
+    let RULER_PIXEL_HEIGHT, RULER_Y_START, RULER_X, RULER_WIDTH;
+    let BALL_RADIUS, GATE_HEIGHT, GATE_WIDTH;
+
+    let g, RULER_HEIGHT_M, PIXELS_PER_METER, initialVelocity, initialLaunchHeight_M, targetLandingHeight_M, showHeightInfo, showTimeInfo, invertRuler, showGraphs, showVectors, dragCoefficient_b;
+    let ball, gates, xtChart, vtChart, clouds = [], stars = [], mountainRanges = [], simulationData = [];
+    let isRunning = false, lastTime = 0, elapsedTime = 0, animationFrameId, nextRecordTime = 1.0;
+    let peakHeightInfo = null;
+    
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const interpolateColor = (color1, color2, factor) => {
+        const r = Math.round(lerp(color1[0], color2[0], factor));
+        const g = Math.round(lerp(color1[1], color2[1], factor));
+        const b = Math.round(lerp(color1[2], color2[2], factor));
+        return `rgb(${r},${g},${b})`;
+    };
+    
+    Chart.defaults.color = '#9ca3af';
+    Chart.defaults.borderColor = '#334155';
+    const chartOptions = {
+        scales: { 
+            x: { 
+                type: 'linear', position: 'bottom', 
+                title: { display: true, text: 't (s)', color: '#d1d5db' }, 
+                ticks: { color: '#9ca3af' }, 
+                grid: { color: '#334155' } 
+            },
+            y: { 
+                title: { display: true, color: '#d1d5db' }, 
+                ticks: { color: '#9ca3af' }, 
+                grid: { color: '#334155' } 
+            } 
+        },
+        plugins: { legend: { display: false } }, animation: { duration: 0 }, responsive: true, maintainAspectRatio: true
+    };
+    
+    function createCharts() {
+        if (xtChart) xtChart.destroy();
+        xtChart = new Chart(xtChartCtx, { type: 'line', data: { datasets: [{ data: [], borderColor: '#a78bfa', borderWidth: 2.5, pointRadius: 0, tension: 0.1 }] },
+            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, title: { ...chartOptions.scales.y.title, text: 'Altura (m)' } } } }
+        });
+        if (vtChart) vtChart.destroy();
+        vtChart = new Chart(vtChartCtx, { type: 'line', data: { datasets: [{ data: [], borderColor: '#c4b5fd', borderWidth: 2.5, pointRadius: 0 }] },
+            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, title: { ...chartOptions.scales.y.title, text: 'Velocidad (m/s)' } } } }
+        });
+    }
+    
+    function setupClouds() {
+        const w = canvasContainer.offsetWidth;
+        const h = canvasContainer.offsetHeight;
+        if (!w) return;
+        clouds = []; 
+        for (let i = 0; i < 7; i++) {
+             const yPos = 20 + Math.random() * (h * 0.25);
+            clouds.push({
+                x: Math.random() * w, y: yPos,
+                radius: (w * 0.06) + Math.random() * (w * 0.08),
+                speed: 0.1 + Math.random() * 0.3,
+                parts: Array.from({length: 3 + Math.floor(Math.random() * 3)}, () => ({
+                    offsetX: (Math.random() - 0.5) * (w * 0.1),
+                    offsetY: (Math.random() - 0.5) * 15,
+                    radius: 0.5 + Math.random() * 0.5,
+                }))
+            });
+        }
+    }
+
+    function setupStars() {
+        const w = canvasContainer.offsetWidth;
+        const h = canvasContainer.offsetHeight;
+        if (!w) return;
+        stars = [];
+        for (let i = 0; i < 150; i++) {
+            stars.push({
+                x: Math.random() * w, y: Math.random() * h,
+                radius: Math.random() * 1.5, alpha: Math.random(),
+                twinkleSpeed: 0.0001 + Math.random() * 0.0005
+            });
+        }
+    }
+    
+    function setupMountainRanges() {
+        const w = canvasContainer.offsetWidth;
+        const h = canvasContainer.offsetHeight;
+        if (!w || !h) return;
+
+        mountainRanges = [];
+        const floorY = RULER_Y_START + RULER_PIXEL_HEIGHT;
+        
+        const ranges = [
+            { color: 'rgba(40, 50, 70, 0.6)', heightFactor: 0.5, complexity: 8 },
+            { color: 'rgba(50, 60, 85, 0.8)', heightFactor: 0.4, complexity: 12 },
+            { color: 'rgba(60, 70, 100, 1)', heightFactor: 0.25, complexity: 16 }
+        ];
+
+        ranges.forEach(range => {
+            const points = [];
+            const peakHeight = floorY * range.heightFactor;
+            const step = w / range.complexity;
+            
+            points.push({ x: 0, y: floorY });
+            for (let i = 0; i <= range.complexity; i++) {
+                const x = i * step;
+                const y = (i % 2 === 0) 
+                    ? floorY - (Math.random() * peakHeight) 
+                    : floorY - (Math.random() * peakHeight / 2);
+                points.push({ x, y });
+            }
+            points.push({ x: w, y: floorY });
+
+            mountainRanges.push({ color: range.color, points: points });
+        });
+    }
+
+    function renderDataTable() {
+        dataTableBody.innerHTML = '';
+        simulationData.forEach(data => {
+            const row = document.createElement('tr');
+            row.className = 'bg-slate-900/50 border-b border-slate-800 hover:bg-slate-800/50';
+            row.innerHTML = `
+                <td class="py-2 px-3 font-medium text-gray-200 whitespace-nowrap">${data.time.toFixed(3)}</td>
+                <td class="py-2 px-3">${data.height.toFixed(3)}</td>
+                <td class="py-2 px-3">${data.velocity.toFixed(3)}</td>
+            `;
+            dataTableBody.appendChild(row);
+        });
+    }
+
+    function fullReset() {
+        const w = canvasContainer.offsetWidth;
+        const h = canvasContainer.offsetHeight;
+        RULER_PIXEL_HEIGHT = h * 0.85;
+        RULER_Y_START = h * 0.075;
+        RULER_X = w * 0.35;
+        RULER_WIDTH = w * 0.04;
+        BALL_RADIUS = Math.max(10, w * 0.02);
+        GATE_HEIGHT = h * 0.035;
+        GATE_WIDTH = w * 0.12;
+        isRunning = false;
+        
+        rulerHeightSlider.disabled = false;
+        initialVelocitySlider.disabled = false;
+        planetSelector.disabled = false;
+        airResistanceSelector.disabled = false;
+        initialHeightSlider.disabled = false;
+        targetHeightSlider.disabled = false;
+
+        g = parseFloat(planetSelector.value);
+        dragCoefficient_b = parseFloat(airResistanceSelector.value);
+        RULER_HEIGHT_M = parseFloat(rulerHeightSlider.value);
+        
+        if (dragCoefficient_b > 0) {
+            const terminalV = g / dragCoefficient_b;
+            terminalVelocityValue.textContent = terminalV.toFixed(2);
+            terminalVelocityDisplay.classList.remove('hidden');
+        } else {
+            terminalVelocityDisplay.classList.add('hidden');
+        }
+
+        initialVelocity = parseFloat(initialVelocitySlider.value);
+        initialLaunchHeight_M = parseFloat(initialHeightSlider.value);
+        targetLandingHeight_M = parseFloat(targetHeightSlider.value);
+
+        // Auto-ajuste de escala de altura
+        const theoreticalMaxHeight = initialLaunchHeight_M + (initialVelocity * initialVelocity) / (2 * g);
+        const requiredScale = theoreticalMaxHeight * 1.15; // 15% de margen
+        if (requiredScale > RULER_HEIGHT_M) {
+            RULER_HEIGHT_M = Math.ceil(requiredScale / 10) * 10;
+            rulerHeightSlider.value = RULER_HEIGHT_M;
+            heightValueOutput.textContent = RULER_HEIGHT_M;
+        }
+
+        PIXELS_PER_METER = RULER_PIXEL_HEIGHT / RULER_HEIGHT_M;
+        showHeightInfo = showHeightCheckbox.checked;
+        showTimeInfo = showTimeCheckbox.checked;
+        invertRuler = invertRulerCheckbox.checked;
+        showGraphs = showGraphsCheckbox.checked;
+        showVectors = showVectorsCheckbox.checked;
+        analysisContainer.style.display = showGraphs ? 'block' : 'none';
+
+        const startY = (RULER_Y_START + RULER_PIXEL_HEIGHT) - (initialLaunchHeight_M * PIXELS_PER_METER);
+        ball = { y: startY, vy: -initialVelocity, initialY: startY };
+        
+        if (!gates) { 
+            gates = [ 
+                { y: RULER_Y_START + (RULER_PIXEL_HEIGHT * 0.2), speedUp: null, speedDown: null, isDragging: false }, 
+                { y: RULER_Y_START + (RULER_PIXEL_HEIGHT * 0.7), speedUp: null, speedDown: null, isDragging: false } 
+            ]; 
+        } else {
+             gates[0].y = RULER_Y_START + (RULER_PIXEL_HEIGHT * 0.2);
+             gates[1].y = RULER_Y_START + (RULER_PIXEL_HEIGHT * 0.7);
+        }
+        gates.forEach(gate => { gate.speedUp = null; gate.speedDown = null; });
+        elapsedTime = 0;
+        nextRecordTime = 1.0;
+        peakHeightInfo = null;
+        runBtn.disabled = false; runBtn.innerHTML = 'Lanzar';
+        if(showGraphs) createCharts();
+        
+        simulationData = [];
+        renderDataTable();
+
+        setupClouds();
+        setupStars();
+        setupMountainRanges();
+        if (!animationFrameId) {
+            gameLoop();
+        }
+    }
+
+    function resetFallState() {
+        isRunning = false;
+        elapsedTime = 0;
+        nextRecordTime = 1.0;
+        peakHeightInfo = null;
+        const startY = (RULER_Y_START + RULER_PIXEL_HEIGHT) - (initialLaunchHeight_M * PIXELS_PER_METER);
+        ball = { y: startY, vy: -initialVelocity, initialY: startY };
+        gates.forEach(gate => { gate.speedUp = null; gate.speedDown = null; });
+        runBtn.disabled = false; runBtn.innerHTML = 'Lanzar';
+        if(showGraphs) createCharts();
+        
+        simulationData = [];
+        simulationData.push({ time: 0, height: initialLaunchHeight_M, velocity: initialVelocity });
+        renderDataTable();
+    }
+
+    function drawSky() {
+        const w = canvasContainer.offsetWidth;
+        const h = canvasContainer.offsetHeight;
+        const altitudeFactor = Math.min(RULER_HEIGHT_M / 5000, 1);
+        
+        const skyGradient = ctx.createLinearGradient(0, 0, 0, h);
+        
+        const topColor = interpolateColor([5, 5, 20], [135, 206, 250], 1 - altitudeFactor);
+        const midColor = interpolateColor([20, 30, 70], [173, 216, 250], 1 - altitudeFactor);
+        const horizonColor = interpolateColor([230, 240, 255], [255, 228, 181], 1 - altitudeFactor);
+        
+        skyGradient.addColorStop(0, topColor);
+        skyGradient.addColorStop(0.6, midColor);
+        skyGradient.addColorStop(1, horizonColor);
+        ctx.fillStyle = skyGradient;
+        ctx.fillRect(0, 0, w, h);
+
+        const starAlpha = Math.max(0, (altitudeFactor - 0.4) * 1.67);
+        if (starAlpha > 0) {
+            stars.forEach(star => {
+                ctx.fillStyle = `rgba(255, 255, 240, ${star.alpha * starAlpha * Math.abs(Math.sin(Date.now() * star.twinkleSpeed))})`;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+    }
+    
+    function drawMountains() {
+        mountainRanges.forEach(range => {
+            ctx.fillStyle = range.color;
+            ctx.beginPath();
+            if (range.points.length > 0) {
+                ctx.moveTo(range.points[0].x, range.points[0].y);
+                for (let i = 1; i < range.points.length; i++) {
+                    ctx.lineTo(range.points[i].x, range.points[i].y);
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+        });
+    }
+
+    function drawClouds() {
+        const altitudeFactor = Math.min(RULER_HEIGHT_M / 5000, 1);
+        const cloudAlpha = lerp(0.8, 0.1, altitudeFactor);
+        if (cloudAlpha <= 0.05) return;
+
+        clouds.forEach(cloud => {
+            cloud.parts.forEach(part => {
+                const grad = ctx.createRadialGradient(
+                    cloud.x + part.offsetX, cloud.y + part.offsetY, 0,
+                    cloud.x + part.offsetX, cloud.y + part.offsetY, cloud.radius * part.radius
+                );
+                grad.addColorStop(0, `rgba(255, 255, 255, ${cloudAlpha * 0.8})`);
+                grad.addColorStop(1, `rgba(220, 220, 255, ${cloudAlpha * 0.2})`);
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(cloud.x + part.offsetX, cloud.y + part.offsetY, cloud.radius * part.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        });
+    }
+
+    function drawGrass() {
+        const w = canvasContainer.offsetWidth;
+        const floorY = RULER_Y_START + RULER_PIXEL_HEIGHT;
+        const groundHeight = canvasContainer.offsetHeight - floorY;
+
+        if (groundHeight > 0) {
+            const grassGradient = ctx.createLinearGradient(0, floorY, 0, canvasContainer.offsetHeight);
+            grassGradient.addColorStop(0, '#16a34a');
+            grassGradient.addColorStop(0.3, '#15803d');
+            grassGradient.addColorStop(1, '#052e16');
+            ctx.fillStyle = grassGradient;
+            ctx.fillRect(0, floorY, w, groundHeight);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+            ctx.lineWidth = 1;
+            for(let i = 0; i < 100; i++) {
+                const x = Math.random() * w;
+                const y = floorY + Math.random() * groundHeight;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + (Math.random() - 0.5) * 15, y - Math.random() * 10);
+                ctx.stroke();
+            }
+        }
+    }
+    
+    function drawRuler() {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 2;
+        ctx.fillRect(RULER_X, RULER_Y_START, RULER_WIDTH, RULER_PIXEL_HEIGHT);
+        ctx.strokeRect(RULER_X, RULER_Y_START, RULER_WIDTH, RULER_PIXEL_HEIGHT);
+        
+        ctx.fillStyle = '#e2e8f0'; 
+        ctx.font = `bold 12px Inter`; 
+        ctx.textAlign = 'right';
+        ctx.lineWidth = 1;
+        
+        for (let i = 0; i <= 10; i++) {
+            const y = RULER_Y_START + (i / 10) * RULER_PIXEL_HEIGHT;
+            const dist_from_top_m = (i / 10) * RULER_HEIGHT_M;
+            const h_label = invertRuler ? RULER_HEIGHT_M - dist_from_top_m : dist_from_top_m;
+            
+            const isMajorTick = i % 5 === 0;
+            const markLength = isMajorTick ? 15 : 8;
+            ctx.beginPath(); 
+            ctx.moveTo(RULER_X, y); 
+            ctx.lineTo(RULER_X - markLength, y);
+            ctx.strokeStyle = isMajorTick ? '#cbd5e1' : '#94a3b8'; 
+            ctx.stroke();
+            
+            const labelFrequency = RULER_HEIGHT_M > 200 ? 2 : 1;
+            if (i % labelFrequency === 0 || i === 0 || i === 10) {
+                 drawTextWithOutline(`${h_label.toFixed(0)} m`, RULER_X - markLength - 5, y + 4, `bold 12px Inter`);
+            }
+        }
+    }
+
+    function drawPlatforms() {
+        const floorY = RULER_Y_START + RULER_PIXEL_HEIGHT;
+        
+        // Plataforma de lanzamiento
+        const launchY = floorY - (initialLaunchHeight_M * PIXELS_PER_METER);
+        if (initialLaunchHeight_M > 0) {
+            ctx.fillStyle = '#475569';
+            ctx.fillRect(0, launchY, canvasContainer.offsetWidth, canvasContainer.offsetHeight - launchY);
+            ctx.fillStyle = '#64748b';
+            ctx.fillRect(0, launchY, canvasContainer.offsetWidth, 4);
+        }
+
+        // Plataforma objetivo
+        const targetY = floorY - (targetLandingHeight_M * PIXELS_PER_METER);
+        ctx.save();
+        ctx.fillStyle = '#15803d'; // Verde oscuro para la plataforma
+        ctx.fillRect(0, targetY, canvasContainer.offsetWidth, canvasContainer.offsetHeight - targetY);
+
+        // Borde brillante con animación
+        const platformElement = document.getElementById('targetPlatform');
+        if (isRunning) {
+            ctx.shadowColor = '#4ade80';
+            ctx.shadowBlur = 15 + Math.sin(elapsedTime * 4) * 10;
+        }
+        ctx.fillStyle = '#4ade80'; // Verde brillante
+        ctx.fillRect(0, targetY, canvasContainer.offsetWidth, 4);
+        ctx.restore();
+    }
+
+
+    function drawBall() {
+        const ballX = RULER_X + RULER_WIDTH / 2, ballY = ball.y;
+        
+        ctx.save();
+        const shadowY = (RULER_Y_START + RULER_PIXEL_HEIGHT) - (targetLandingHeight_M * PIXELS_PER_METER);
+        const shadowFactor = 1 - Math.abs(shadowY - ball.y) / (RULER_PIXEL_HEIGHT * 1.5);
+
+        if (shadowFactor > 0) {
+            ctx.beginPath();
+            ctx.ellipse(ballX, shadowY + 2, BALL_RADIUS * 0.8 * shadowFactor, BALL_RADIUS * 0.2 * shadowFactor, 0, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0, 0, 0, ${0.4 * shadowFactor})`;
+            ctx.fill();
+        }
+
+        const gradient = ctx.createRadialGradient(ballX - 5, ballY - 5, 2, ballX, ballY, BALL_RADIUS);
+        gradient.addColorStop(0, '#fde047');
+        gradient.addColorStop(0.8, '#eab308');
+        gradient.addColorStop(1, '#a16207');
+        ctx.beginPath();
+        ctx.arc(ballX, ballY, BALL_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = gradient; 
+        ctx.fill(); 
+
+        if (!isRunning) {
+            const glowAlpha = (Math.sin(Date.now() * 0.005) + 1) / 2;
+            ctx.beginPath();
+            ctx.arc(ballX, ballY, BALL_RADIUS, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(253, 224, 71, ${glowAlpha * 0.7})`;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+    
+    function drawVectors() {
+        if (!showVectors || !isRunning) return;
+
+        const ballX = RULER_X + RULER_WIDTH / 2;
+        const ballY = ball.y;
+        const arrowSize = 8;
+        ctx.save();
+        
+        // Vector Velocidad (Amarillo)
+        const velVectorLength = ball.vy * 2.5; // vy es negativo al subir
+        ctx.beginPath();
+        ctx.moveTo(ballX, ballY);
+        ctx.lineTo(ballX, ballY + velVectorLength);
+        const velArrowY = ballY + velVectorLength;
+        const velArrowDir = Math.sign(velVectorLength);
+        ctx.moveTo(ballX, velArrowY);
+        ctx.lineTo(ballX - arrowSize / 2, velArrowY - arrowSize * velArrowDir);
+        ctx.moveTo(ballX, velArrowY);
+        ctx.lineTo(ballX + arrowSize / 2, velArrowY - arrowSize * velArrowDir);
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // Vector Rozamiento (Rojo)
+        if (dragCoefficient_b > 0 && ball.vy !== 0) {
+            const dragVectorLength = -dragCoefficient_b * ball.vy * 15; // Opuesto a la velocidad
+            ctx.beginPath();
+            ctx.moveTo(ballX, ballY);
+            ctx.lineTo(ballX, ballY + dragVectorLength);
+            const dragArrowY = ballY + dragVectorLength;
+            const dragArrowDir = Math.sign(dragVectorLength);
+            ctx.moveTo(ballX, dragArrowY);
+            ctx.lineTo(ballX - arrowSize / 2, dragArrowY - arrowSize * dragArrowDir);
+            ctx.moveTo(ballX, dragArrowY);
+            ctx.lineTo(ballX + arrowSize / 2, dragArrowY - arrowSize * dragArrowDir);
+            ctx.strokeStyle = '#f87171';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+    
+    function drawTextWithOutline(text, x, y, font = `bold 16px Inter`, fillStyle = '#f1f5f9') {
+        const altitudeFactor = Math.min(RULER_HEIGHT_M / 5000, 1);
+        const textShadowOpacity = Math.max(0, 1 - altitudeFactor * 2);
+        
+        ctx.save();
+        ctx.font = font;
+        ctx.textAlign = 'right';
+        
+        if (textShadowOpacity > 0.1) {
+            ctx.strokeStyle = `rgba(0, 0, 0, ${textShadowOpacity * 0.8})`;
+            ctx.lineWidth = 3;
+            ctx.strokeText(text, x, y);
+        } else {
+            ctx.strokeStyle = `rgba(255, 255, 255, ${Math.abs(textShadowOpacity - 1) * 0.4})`;
+            ctx.lineWidth = 3;
+            ctx.strokeText(text, x, y);
+        }
+        
+        ctx.fillStyle = fillStyle;
+        ctx.fillText(text, x, y);
+        ctx.restore();
+    }
+
+    function drawPeakIndicator() {
+        if (!peakHeightInfo) return;
+
+        const peakY = peakHeightInfo.y;
+        
+        ctx.beginPath();
+        ctx.moveTo(RULER_X, peakY);
+        ctx.lineTo(RULER_X + RULER_WIDTH, peakY);
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        const text = `H. max: ${peakHeightInfo.height.toFixed(2)} m`;
+        const textX = RULER_X - 15;
+        
+        drawTextWithOutline(text, textX, peakY + 4, 'bold 14px Inter', '#fef08a');
+    }
+
+    function drawGates() {
+        const w = canvasContainer.offsetWidth;
+        const gateX = RULER_X + RULER_WIDTH + 10;
+        const altitudeFactor = Math.min(RULER_HEIGHT_M / 5000, 1);
+        
+        const highAltColorStroke = [199, 210, 254]; 
+        const lowAltColorStroke = [79, 70, 229]; 
+        const highAltColorFill = [129, 140, 248, 0.4];
+        const lowAltColorFill = [99, 102, 241, 0.7];
+
+        const strokeColor = interpolateColor(highAltColorStroke, lowAltColorStroke, 1 - altitudeFactor);
+        const fillColor = `rgba(${interpolateColor(highAltColorFill, lowAltColorFill, 1-altitudeFactor)}, ${lerp(0.4, 0.7, 1-altitudeFactor)})`;
+        const textColor = interpolateColor([255,255,255], [15,23,42], 1 - altitudeFactor);
+
+        gates.forEach((gate, index) => {
+            const gateMidY = gate.y;
+            
+            ctx.save();
+            ctx.shadowColor = 'rgba(165, 180, 252, 0.8)';
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = fillColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 3;
+            ctx.fillRect(gateX, gateMidY - GATE_HEIGHT / 2, GATE_WIDTH, GATE_HEIGHT);
+            ctx.strokeRect(gateX, gateMidY - GATE_HEIGHT / 2, GATE_WIDTH, GATE_HEIGHT);
+            ctx.restore();
+
+            ctx.beginPath();
+            ctx.moveTo(gateX, gateMidY);
+            ctx.lineTo(gateX + GATE_WIDTH, gateMidY);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            ctx.save();
+            ctx.font = `bold ${GATE_HEIGHT * 0.6}px Inter`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            drawTextWithOutline(index + 1, gateX + GATE_WIDTH / 2, gateMidY, `bold ${GATE_HEIGHT * 0.6}px Inter`, textColor);
+            ctx.restore();
+            
+            ctx.strokeStyle = 'rgba(199, 210, 254, 0.9)'; 
+            ctx.setLineDash([10, 8]);
+            ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.moveTo(0, gate.y); ctx.lineTo(w, gate.y);
+            ctx.stroke(); ctx.setLineDash([]);
+
+            const displayHeight = ((RULER_Y_START + RULER_PIXEL_HEIGHT) - gate.y) / PIXELS_PER_METER;
+            
+            const infoBoxX = w - 20;
+            ctx.textAlign = 'right';
+
+            let lines = [];
+            if (gate.speedUp !== null) {
+                lines.push({ text: `S: ${gate.speedUp.toFixed(2)} m/s`, font: `bold 16px Inter`, color: '#c4b5fd' });
+            }
+            if (gate.speedDown !== null) {
+                lines.push({ text: `B: ${gate.speedDown.toFixed(2)} m/s`, font: `bold 16px Inter`, color: '#fca5a5' });
+            }
+            if (showHeightInfo) {
+                lines.push({ text: `${Math.max(0, displayHeight).toFixed(2)} m`, font: `14px Inter`, color: '#c7d2fe' });
+            }
+            
+            const totalBlockHeight = lines.length * 20;
+            let startY;
+
+            if (gate.y > RULER_Y_START + RULER_PIXEL_HEIGHT * 0.8) {
+                 startY = gate.y - GATE_HEIGHT / 2 - totalBlockHeight;
+            } else {
+                 startY = gate.y + GATE_HEIGHT / 2 + 5;
+            }
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                drawTextWithOutline(line.text, infoBoxX, startY + (i * 20), line.font, line.color);
+            }
+        });
+    }
+
+    function updatePhysics(deltaTime) {
+        elapsedTime += deltaTime;
+        const lastVy = ball.vy;
+        
+        const acceleration = g - (dragCoefficient_b * ball.vy);
+        ball.vy += acceleration * deltaTime;
+        ball.y += ball.vy * PIXELS_PER_METER * deltaTime;
+        
+        const floorY = RULER_Y_START + RULER_PIXEL_HEIGHT;
+        const currentHeight = (floorY - ball.y) / PIXELS_PER_METER;
+
+        if (peakHeightInfo === null && lastVy <= 0 && ball.vy > 0) {
+            const timeToPeak = -lastVy / acceleration;
+            const peakY = ball.y - (ball.vy * PIXELS_PER_METER * timeToPeak);
+            peakHeightInfo = {
+                y: peakY,
+                height: (floorY - peakY) / PIXELS_PER_METER
+            };
+        }
+
+        if (showGraphs && elapsedTime >= nextRecordTime) {
+            simulationData.push({ time: elapsedTime, height: Math.max(0, currentHeight), velocity: -ball.vy });
+            renderDataTable();
+            nextRecordTime += 1.0;
+        }
+
+        if (showGraphs) {
+            if (currentHeight >= -BALL_RADIUS/PIXELS_PER_METER) {
+                xtChart.data.datasets[0].data.push({x: elapsedTime, y: currentHeight});
+                vtChart.data.datasets[0].data.push({x: elapsedTime, y: -ball.vy});
+                xtChart.update('none'); vtChart.update('none');
+            }
+        }
+
+        gates.forEach(gate => {
+            const lastY = ball.y - ball.vy * PIXELS_PER_METER * deltaTime;
+            const crossedUp = ball.vy < 0 && lastY > gate.y && ball.y <= gate.y;
+            const crossedDown = ball.vy > 0 && lastY < gate.y && ball.y >= gate.y;
+
+            if (dragCoefficient_b === 0) {
+                // Caso ideal: la velocidad es la misma al subir y bajar. Se calcula el valor teórico.
+                const gateHeightM = ((floorY) - gate.y) / PIXELS_PER_METER;
+                const speed = Math.sqrt(Math.max(0, initialVelocity * initialVelocity - 2 * g * (gateHeightM - initialLaunchHeight_M)));
+                
+                if (crossedUp && gate.speedUp === null) {
+                    gate.speedUp = speed;
+                }
+                if (crossedDown && gate.speedDown === null) {
+                    gate.speedDown = speed;
+                }
+            } else {
+                // Caso con rozamiento: las velocidades son diferentes y se miden en el instante.
+                if (crossedUp && gate.speedUp === null) { gate.speedUp = -ball.vy; }
+                if (crossedDown && gate.speedDown === null) { gate.speedDown = ball.vy; }
+            }
+        });
+
+        const targetY = floorY - (targetLandingHeight_M * PIXELS_PER_METER);
+        if (ball.y + BALL_RADIUS > targetY && ball.vy > 0) {
+            ball.y = targetY - BALL_RADIUS;
+            isRunning = false;
+            runBtn.innerHTML = '🏁 Finalizado'; runBtn.disabled = true;
+            
+            if (showGraphs) {
+                simulationData.push({ time: elapsedTime, height: targetLandingHeight_M, velocity: -ball.vy });
+                renderDataTable();
+                dataTableContainer.scrollTop = dataTableContainer.scrollHeight;
+            }
+        }
+    }
+    
+    function gameLoop(time) {
+        if (!isRunning) lastTime = 0;
+        
+        clouds.forEach(cloud => {
+            cloud.x += cloud.speed;
+            if (cloud.x - cloud.radius > canvasContainer.offsetWidth) cloud.x = -cloud.radius * 2.5;
+        });
+        
+        if (isRunning) {
+            if (lastTime === 0) { lastTime = time; }
+            const deltaTime = (time - lastTime) / 1000;
+            lastTime = time;
+            if (deltaTime > 0 && deltaTime < 0.1) {
+                 updatePhysics(deltaTime);
+            }
+        }
+        
+        ctx.clearRect(0,0,canvas.width, canvas.height);
+        drawSky();
+        drawMountains();
+        drawClouds();
+        drawGrass();
+        drawPlatforms();
+        drawRuler();
+        drawPeakIndicator();
+        drawGates();
+        drawBall();
+        drawVectors();
+        if(showTimeInfo) timeValueElement.textContent = `${elapsedTime.toFixed(2)}`;
+
+        animationFrameId = requestAnimationFrame(gameLoop);
+    }
+    
+    runBtn.addEventListener('click', () => { 
+        if (isRunning) return; 
+        resetFallState(); 
+        isRunning = true; 
+        rulerHeightSlider.disabled = true;
+        initialVelocitySlider.disabled = true;
+        planetSelector.disabled = true;
+        airResistanceSelector.disabled = true;
+        initialHeightSlider.disabled = true;
+        targetHeightSlider.disabled = true;
+    });
+    
+    resetBtn.addEventListener('click', fullReset);
+    planetSelector.addEventListener('change', fullReset);
+    airResistanceSelector.addEventListener('change', fullReset);
+    
+    rulerHeightSlider.addEventListener('input', () => { 
+        const newMax = rulerHeightSlider.value;
+        heightValueOutput.textContent = newMax;
+        initialHeightSlider.max = newMax;
+        targetHeightSlider.max = newMax;
+        if (parseFloat(initialHeightSlider.value) > newMax) {
+            initialHeightSlider.value = newMax;
+            initialHeightValue.textContent = newMax;
+        }
+        if (parseFloat(targetHeightSlider.value) > newMax) {
+            targetHeightSlider.value = newMax;
+            targetHeightValue.textContent = newMax;
+        }
+    });
+    rulerHeightSlider.addEventListener('change', fullReset);
+    
+    initialVelocitySlider.addEventListener('input', () => {
+        initialVelocityValue.textContent = parseFloat(initialVelocitySlider.value).toFixed(1);
+    });
+    initialVelocitySlider.addEventListener('change', fullReset);
+
+    initialHeightSlider.addEventListener('input', (e) => {
+        const initialH = parseFloat(e.target.value);
+        const targetH = parseFloat(targetHeightSlider.value);
+        if (initialH < targetH) {
+            targetHeightSlider.value = initialH;
+            targetHeightValue.textContent = initialH;
+        }
+        initialHeightValue.textContent = initialH;
+    });
+    initialHeightSlider.addEventListener('change', fullReset);
+
+    targetHeightSlider.addEventListener('input', (e) => {
+        const targetH = parseFloat(e.target.value);
+        const initialH = parseFloat(initialHeightSlider.value);
+        if (targetH > initialH) {
+            initialHeightSlider.value = targetH;
+            initialHeightValue.textContent = targetH;
+        }
+        targetHeightValue.textContent = targetH;
+    });
+    targetHeightSlider.addEventListener('change', fullReset);
+
+
+    invertRulerCheckbox.addEventListener('change', fullReset);
+    showGraphsCheckbox.addEventListener('change', () => { 
+        showGraphs = showGraphsCheckbox.checked; 
+        analysisContainer.style.display = showGraphs ? 'block' : 'none'; 
+        if (showGraphs) {
+            createCharts();
+            renderDataTable();
+        }
+    });
+    showHeightCheckbox.addEventListener('change', () => { showHeightInfo = showHeightCheckbox.checked; });
+    showTimeCheckbox.addEventListener('change', () => { 
+        showTimeInfo = showTimeCheckbox.checked;
+        infoPanel.style.display = showTimeInfo ? 'block' : 'none';
+    });
+    showVectorsCheckbox.addEventListener('change', () => {
+        showVectors = showVectorsCheckbox.checked;
+    });
+
+    exportCsvBtn.addEventListener('click', () => {
+        if (simulationData.length === 0) {
+            exportCsvBtn.textContent = 'No hay datos para exportar';
+            exportCsvBtn.classList.add('bg-red-500');
+            setTimeout(() => {
+                exportCsvBtn.textContent = 'Descargar CSV';
+                exportCsvBtn.classList.remove('bg-red-500');
+            }, 2000);
+            return;
+        }
+
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Tiempo (s),Altura (m),Velocidad (m/s)\n";
+
+        simulationData.forEach(row => {
+            let csvRow = [row.time.toFixed(3), row.height.toFixed(3), row.velocity.toFixed(3)].join(",");
+            csvContent += csvRow + "\r\n";
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "datos_lanzamiento_vertical.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+
+    infoBtn.addEventListener('click', () => {
+        infoPopup.classList.remove('hidden');
+    });
+    closePopupBtn.addEventListener('click', () => {
+        infoPopup.classList.add('hidden');
+    });
+     infoPopup.addEventListener('click', (e) => {
+         if (e.target === infoPopup) {
+             infoPopup.classList.add('hidden');
+         }
+    });
+
+
+    let activeGate = null;
+    function getEventPosition(evt) { 
+        const rect = canvas.getBoundingClientRect(); 
+        const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX; 
+        const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY; 
+        return { x: (clientX - rect.left), y: (clientY - rect.top) }; 
+    }
+    function onDragStart(e) { 
+        if(isRunning) return;
+        const pos = getEventPosition(e); 
+        const gateX = RULER_X + RULER_WIDTH + 10; let isDraggingGate = false;
+        gates.forEach(gate => { 
+            if (pos.x > gateX && pos.x < gateX + GATE_WIDTH && pos.y > gate.y - GATE_HEIGHT / 2 && pos.y < gate.y + GATE_HEIGHT / 2) { 
+                gate.isDragging = true; activeGate = gate; canvasContainer.style.cursor = 'grabbing'; isDraggingGate = true; 
+            } 
+        });
+        if (isDraggingGate) { e.preventDefault(); }
+    }
+    function onDragMove(e) { 
+        if (!activeGate) return; 
+        e.preventDefault(); 
+        const pos = getEventPosition(e); 
+        const rulerEnd = RULER_Y_START + RULER_PIXEL_HEIGHT; 
+        activeGate.y = Math.max(RULER_Y_START, Math.min(pos.y, rulerEnd)); 
+        resetFallState(); 
+    }
+    function onDragEnd(e) { 
+        if (activeGate) { 
+            e.preventDefault(); 
+            activeGate.isDragging = false; activeGate = null; canvasContainer.style.cursor = 'grab'; 
+        } 
+    }
+    
+    canvasContainer.addEventListener('mousedown', onDragStart);
+    canvasContainer.addEventListener('mousemove', onDragMove);
+    window.addEventListener('mouseup', onDragEnd);
+    canvasContainer.addEventListener('mouseleave', onDragEnd);
+    canvasContainer.addEventListener('touchstart', onDragStart, { passive: false });
+    canvasContainer.addEventListener('touchmove', onDragMove, { passive: false });
+    window.addEventListener('touchend', onDragEnd);
+    
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+</script>
+
+</body>
+</html>
+
+
