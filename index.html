@@ -241,26 +241,33 @@
     const timeValueElement = document.getElementById('time-value');
     const infoPanel = document.getElementById('info-panel');
     
-    // Variable para controlar el reinicio en scroll de móvil
     let lastCanvasWidth = 0;
+    let simulationHasRun = false; // Flag to check if a simulation has run to completion
 
     function resizeCanvas() {
         const currentWidth = canvasContainer.offsetWidth;
 
+        // Ignore minor resizes from mobile scrollbars if simulation is active
         if (isRunning && Math.abs(currentWidth - lastCanvasWidth) < 5) {
-            console.log("Scroll de móvil detectado durante la simulación. Reinicio ignorado.");
             return;
         }
 
+        // Always update canvas dimensions
         canvas.width = canvasContainer.offsetWidth * window.devicePixelRatio;
         canvas.height = canvasContainer.offsetHeight * window.devicePixelRatio;
         canvas.style.width = `${canvasContainer.offsetWidth}px`;
         canvas.style.height = `${canvasContainer.offsetHeight}px`;
         ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
         
-        if (canvasContainer.offsetWidth > 0) {
-            fullReset();
+        // If a simulation has finished, redraw its final state without resetting data
+        if (simulationHasRun && !isRunning) {
+            redrawFinalState();
+        } else { // Otherwise (initial load, after reset, or major resize during run), do a full reset
+            if (canvasContainer.offsetWidth > 0) {
+                fullReset();
+            }
         }
+
         lastCanvasWidth = currentWidth;
     }
 
@@ -298,9 +305,14 @@
     let BALL_RADIUS, GATE_HEIGHT, GATE_WIDTH;
 
     let g, RULER_HEIGHT_M, PIXELS_PER_METER, initialVelocity, initialLaunchHeight_M, targetLandingHeight_M, showHeightInfo, showTimeInfo, invertRuler, showGraphs, showVectors, dragCoefficient_b;
-    let ball, gates, xtChart, vtChart, clouds = [], stars = [], mountainRanges = [], simulationData = [];
+    let ball, xtChart, vtChart, clouds = [], stars = [], mountainRanges = [], simulationData = [];
     let isRunning = false, lastTime = 0, elapsedTime = 0, animationFrameId, nextRecordTime = 1.0;
     let peakHeightInfo = null;
+
+    let gates = [ 
+        { yFraction: 0.2, y: 0, speedUp: null, speedDown: null, isDragging: false }, 
+        { yFraction: 0.7, y: 0, speedUp: null, speedDown: null, isDragging: false } 
+    ];
     
     const lerp = (a, b, t) => a + (b - a) * t;
     const interpolateColor = (color1, color2, factor) => {
@@ -456,9 +468,8 @@
         initialLaunchHeight_M = parseFloat(initialHeightSlider.value);
         targetLandingHeight_M = parseFloat(targetHeightSlider.value);
 
-        // Auto-ajuste de escala de altura
         const theoreticalMaxHeight = initialLaunchHeight_M + (initialVelocity * initialVelocity) / (2 * g);
-        const requiredScale = theoreticalMaxHeight * 1.15; // 15% de margen
+        const requiredScale = theoreticalMaxHeight * 1.15;
         if (requiredScale > RULER_HEIGHT_M) {
             RULER_HEIGHT_M = Math.ceil(requiredScale / 10) * 10;
             rulerHeightSlider.value = RULER_HEIGHT_M;
@@ -476,16 +487,12 @@
         const startY = (RULER_Y_START + RULER_PIXEL_HEIGHT) - (initialLaunchHeight_M * PIXELS_PER_METER);
         ball = { y: startY, vy: -initialVelocity, initialY: startY };
         
-        if (!gates) { 
-            gates = [ 
-                { y: RULER_Y_START + (RULER_PIXEL_HEIGHT * 0.2), speedUp: null, speedDown: null, isDragging: false }, 
-                { y: RULER_Y_START + (RULER_PIXEL_HEIGHT * 0.7), speedUp: null, speedDown: null, isDragging: false } 
-            ]; 
-        } else {
-             gates[0].y = RULER_Y_START + (RULER_PIXEL_HEIGHT * 0.2);
-             gates[1].y = RULER_Y_START + (RULER_PIXEL_HEIGHT * 0.7);
-        }
-        gates.forEach(gate => { gate.speedUp = null; gate.speedDown = null; });
+        gates.forEach(gate => {
+            gate.y = RULER_Y_START + gate.yFraction * RULER_PIXEL_HEIGHT;
+            gate.speedUp = null;
+            gate.speedDown = null;
+        });
+
         elapsedTime = 0;
         nextRecordTime = 1.0;
         peakHeightInfo = null;
@@ -500,6 +507,8 @@
         setupMountainRanges();
         if (!animationFrameId) {
             gameLoop();
+        } else {
+            drawStaticScene();
         }
     }
 
@@ -518,6 +527,67 @@
         simulationData.push({ time: 0, height: initialLaunchHeight_M, velocity: initialVelocity });
         renderDataTable();
     }
+
+    function redrawFinalState() {
+        const w = canvasContainer.offsetWidth;
+        const h = canvasContainer.offsetHeight;
+        RULER_PIXEL_HEIGHT = h * 0.85;
+        RULER_Y_START = h * 0.075;
+        RULER_X = w * 0.35;
+        RULER_WIDTH = w * 0.04;
+        BALL_RADIUS = Math.max(10, w * 0.02);
+        GATE_HEIGHT = h * 0.035;
+        GATE_WIDTH = w * 0.12;
+
+        PIXELS_PER_METER = RULER_PIXEL_HEIGHT / RULER_HEIGHT_M;
+
+        const lastDataPoint = simulationData.length > 0 ? simulationData[simulationData.length - 1] : null;
+        if (lastDataPoint) {
+            const finalHeight_M = lastDataPoint.height;
+            ball.y = (RULER_Y_START + RULER_PIXEL_HEIGHT) - (finalHeight_M * PIXELS_PER_METER);
+        }
+        
+        if (peakHeightInfo) {
+            peakHeightInfo.y = (RULER_Y_START + RULER_PIXEL_HEIGHT) - (peakHeightInfo.height * PIXELS_PER_METER);
+        }
+        
+        gates.forEach(gate => {
+            gate.y = RULER_Y_START + gate.yFraction * RULER_PIXEL_HEIGHT;
+        });
+
+        setupClouds();
+        setupStars();
+        setupMountainRanges();
+
+        if (showGraphs) {
+            createCharts();
+            if(simulationData.length > 0) {
+                xtChart.data.datasets[0].data = simulationData.map(d => ({x: d.time, y: d.height}));
+                vtChart.data.datasets[0].data = simulationData.map(d => ({x: d.time, y: d.velocity}));
+                xtChart.update('none'); 
+                vtChart.update('none');
+            }
+            renderDataTable();
+        }
+        
+        drawStaticScene();
+    }
+
+    function drawStaticScene() {
+        ctx.clearRect(0,0,canvas.width, canvas.height);
+        drawSky();
+        drawMountains();
+        drawClouds();
+        drawGrass();
+        drawPlatforms();
+        drawRuler();
+        drawPeakIndicator();
+        drawGates();
+        drawBall();
+        drawVectors();
+        if(showTimeInfo) timeValueElement.textContent = `${elapsedTime.toFixed(2)}`;
+    }
+
 
     function drawSky() {
         const w = canvasContainer.offsetWidth;
@@ -660,7 +730,6 @@
         ctx.fillRect(0, targetY, canvasContainer.offsetWidth, canvasContainer.offsetHeight - targetY);
 
         // Borde brillante con animación
-        const platformElement = document.getElementById('targetPlatform');
         if (isRunning) {
             ctx.shadowColor = '#4ade80';
             ctx.shadowBlur = 15 + Math.sin(elapsedTime * 4) * 10;
@@ -907,7 +976,6 @@
             const crossedDown = ball.vy > 0 && lastY < gate.y && ball.y >= gate.y;
 
             if (dragCoefficient_b === 0) {
-                // Caso ideal: la velocidad es la misma al subir y bajar. Se calcula el valor teórico.
                 const gateHeightM = ((floorY) - gate.y) / PIXELS_PER_METER;
                 const speed = Math.sqrt(Math.max(0, initialVelocity * initialVelocity - 2 * g * (gateHeightM - initialLaunchHeight_M)));
                 
@@ -918,7 +986,6 @@
                     gate.speedDown = speed;
                 }
             } else {
-                // Caso con rozamiento: las velocidades son diferentes y se miden en el instante.
                 if (crossedUp && gate.speedUp === null) { gate.speedUp = -ball.vy; }
                 if (crossedDown && gate.speedDown === null) { gate.speedDown = ball.vy; }
             }
@@ -939,40 +1006,43 @@
     }
     
     function gameLoop(time) {
-        if (!isRunning) lastTime = 0;
+        if (!isRunning) {
+            lastTime = 0;
+            // Static elements animation
+             clouds.forEach(cloud => {
+                cloud.x += cloud.speed;
+                if (cloud.x - cloud.radius > canvasContainer.offsetWidth) cloud.x = -cloud.radius * 2.5;
+            });
+            drawStaticScene();
+            animationFrameId = requestAnimationFrame(gameLoop);
+            return;
+        };
         
         clouds.forEach(cloud => {
             cloud.x += cloud.speed;
             if (cloud.x - cloud.radius > canvasContainer.offsetWidth) cloud.x = -cloud.radius * 2.5;
         });
         
-        if (isRunning) {
-            if (lastTime === 0) { lastTime = time; }
-            const deltaTime = (time - lastTime) / 1000;
-            lastTime = time;
-            if (deltaTime > 0 && deltaTime < 0.1) {
-                 updatePhysics(deltaTime);
-            }
+        if (lastTime === 0) { lastTime = time; }
+        const deltaTime = (time - lastTime) / 1000;
+        lastTime = time;
+        if (deltaTime > 0 && deltaTime < 0.1) {
+             updatePhysics(deltaTime);
         }
         
-        ctx.clearRect(0,0,canvas.width, canvas.height);
-        drawSky();
-        drawMountains();
-        drawClouds();
-        drawGrass();
-        drawPlatforms();
-        drawRuler();
-        drawPeakIndicator();
-        drawGates();
-        drawBall();
-        drawVectors();
-        if(showTimeInfo) timeValueElement.textContent = `${elapsedTime.toFixed(2)}`;
+        drawStaticScene();
 
         animationFrameId = requestAnimationFrame(gameLoop);
     }
     
+    function handleParamChange() {
+        simulationHasRun = false;
+        fullReset();
+    }
+
     runBtn.addEventListener('click', () => { 
         if (isRunning) return; 
+        simulationHasRun = true;
         resetFallState(); 
         isRunning = true; 
         rulerHeightSlider.disabled = true;
@@ -983,9 +1053,9 @@
         targetHeightSlider.disabled = true;
     });
     
-    resetBtn.addEventListener('click', fullReset);
-    planetSelector.addEventListener('change', fullReset);
-    airResistanceSelector.addEventListener('change', fullReset);
+    resetBtn.addEventListener('click', handleParamChange);
+    planetSelector.addEventListener('change', handleParamChange);
+    airResistanceSelector.addEventListener('change', handleParamChange);
     
     rulerHeightSlider.addEventListener('input', () => { 
         const newMax = rulerHeightSlider.value;
@@ -1001,12 +1071,12 @@
             targetHeightValue.textContent = newMax;
         }
     });
-    rulerHeightSlider.addEventListener('change', fullReset);
+    rulerHeightSlider.addEventListener('change', handleParamChange);
     
     initialVelocitySlider.addEventListener('input', () => {
         initialVelocityValue.textContent = parseFloat(initialVelocitySlider.value).toFixed(1);
     });
-    initialVelocitySlider.addEventListener('change', fullReset);
+    initialVelocitySlider.addEventListener('change', handleParamChange);
 
     initialHeightSlider.addEventListener('input', (e) => {
         const initialH = parseFloat(e.target.value);
@@ -1017,7 +1087,7 @@
         }
         initialHeightValue.textContent = initialH;
     });
-    initialHeightSlider.addEventListener('change', fullReset);
+    initialHeightSlider.addEventListener('change', handleParamChange);
 
     targetHeightSlider.addEventListener('input', (e) => {
         const targetH = parseFloat(e.target.value);
@@ -1028,10 +1098,10 @@
         }
         targetHeightValue.textContent = targetH;
     });
-    targetHeightSlider.addEventListener('change', fullReset);
+    targetHeightSlider.addEventListener('change', handleParamChange);
 
 
-    invertRulerCheckbox.addEventListener('change', fullReset);
+    invertRulerCheckbox.addEventListener('change', handleParamChange);
     showGraphsCheckbox.addEventListener('change', () => { 
         showGraphs = showGraphsCheckbox.checked; 
         analysisContainer.style.display = showGraphs ? 'block' : 'none'; 
@@ -1114,6 +1184,7 @@
         const pos = getEventPosition(e); 
         const rulerEnd = RULER_Y_START + RULER_PIXEL_HEIGHT; 
         activeGate.y = Math.max(RULER_Y_START, Math.min(pos.y, rulerEnd)); 
+        activeGate.yFraction = (activeGate.y - RULER_Y_START) / RULER_PIXEL_HEIGHT;
         resetFallState(); 
     }
     function onDragEnd(e) { 
@@ -1138,5 +1209,4 @@
 
 </body>
 </html>
-
 
