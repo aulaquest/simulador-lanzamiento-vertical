@@ -585,7 +585,7 @@
         drawGates();
         drawBall();
         drawVectors();
-        if(showTimeInfo) timeValueElement.textContent = `${elapsedTime.toFixed(2)}`;
+        if(showTimeInfo) timeValueElement.textContent = `${elapsedTime.toFixed(3)}`;
     }
 
 
@@ -948,12 +948,18 @@
         const currentHeight = (floorY - ball.y) / PIXELS_PER_METER;
 
         if (peakHeightInfo === null && lastVy <= 0 && ball.vy > 0) {
-            const timeToPeak = -lastVy / acceleration;
-            const peakY = ball.y - (ball.vy * PIXELS_PER_METER * timeToPeak);
-            peakHeightInfo = {
-                y: peakY,
-                height: (floorY - peakY) / PIXELS_PER_METER
-            };
+            if (dragCoefficient_b === 0) {
+                const exactPeakHeight = initialLaunchHeight_M + (initialVelocity**2) / (2 * g);
+                const peakY = (RULER_Y_START + RULER_PIXEL_HEIGHT) - (exactPeakHeight * PIXELS_PER_METER);
+                peakHeightInfo = { y: peakY, height: exactPeakHeight };
+            } else {
+                const timeToPeak = -lastVy / acceleration;
+                const peakY = ball.y - (ball.vy * PIXELS_PER_METER * timeToPeak);
+                peakHeightInfo = {
+                    y: peakY,
+                    height: (floorY - peakY) / PIXELS_PER_METER
+                };
+            }
         }
 
         if (showGraphs && elapsedTime >= nextRecordTime) {
@@ -996,6 +1002,18 @@
             ball.y = targetY - BALL_RADIUS;
             isRunning = false;
             runBtn.innerHTML = '🏁 Finalizado'; runBtn.disabled = true;
+            
+            if (dragCoefficient_b === 0) {
+                const v0 = initialVelocity;
+                const h0 = initialLaunchHeight_M;
+                const hf = targetLandingHeight_M;
+                
+                const exactFinalVelocityMagnitude = Math.sqrt(v0**2 - 2 * g * (hf - h0));
+                const exactTime = (exactFinalVelocityMagnitude + v0) / g;
+
+                elapsedTime = exactTime;
+                ball.vy = exactFinalVelocityMagnitude;
+            }
             
             if (showGraphs) {
                 simulationData.push({ time: elapsedTime, height: targetLandingHeight_M, velocity: -ball.vy });
@@ -1209,4 +1227,3 @@
 
 </body>
 </html>
-
